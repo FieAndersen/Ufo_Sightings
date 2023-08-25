@@ -2,16 +2,21 @@
 title: "UFO Sightings"
 author: "Karoline, Eske, Bjarke & Fie"
 date: "2023-08-25"
-output: html_document
+output: 
+  prettydoc::html_pretty:
+    theme: cayman
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+```{r, echo=FALSE}
+knitr::include_graphics("C:/Users/fiea/Desktop/Advanced R/UFO.PNG")
+```
+
 ### Data Set
 This is a dataset that contains data from UFO sightings all around the world. It comprises over 80,000 records of UFO sightings reported to the National UFO Reporting Center in the United States during the last century (NUFORC)
-
 
 ### Loading Libraries 
 ```{r, warning=FALSE, message=FALSE}
@@ -72,13 +77,13 @@ ufo_sightings$posted_year <- as.integer(str_sub(ufo_sightings$posted_date, start
 places$timezone_short <- str_remove(places$timezone, pattern = "/.*")
 
 # Join ufo_sightings and places data
-UFO_year_cum <- ufo_sightings %>%
-  left_join(., select(places, city, timezone_short), by=("city")) %>%
-  group_by(timezone_short, posted_year) %>%
+UFO_year <- ufo_sightings %>%
+  left_join(., select(places, city, state, country_code, timezone_short), by=c("city", "state", "country_code")) %>%
+    group_by(timezone_short, posted_year) %>%
   count(name = "counts")
 
 # create plot
-animated_plot2 <- UFO_year_cum %>%
+animated_plot2 <- UFO_year %>%
 ggplot(aes(posted_year, counts)) +
   geom_path(aes(col = timezone_short),
             size = 1) +
@@ -161,7 +166,8 @@ state_data <- data.frame(
 Join and plot the correlation
 ```{r, warning=FALSE}
 state_pop<-left_join(state_data,state_pop, by = c("state_name" ="NAME"))
-state_counts <- sightings_in_US %>%
+sightings_in_us_all<-ufo_sightings %>%filter(country_code=="US")
+state_counts <-sightings_in_us_all %>%
   group_by(state) %>%
   summarize(count = n())
 for_plot<-left_join(state_counts,state_pop, by = c("state"="state_code"))
@@ -171,7 +177,6 @@ ggplot(for_plot, aes(x = count, y = POPESTIMATE2010)) +
   labs(title = "Relationship Between UFO Sightings and State Population", x = "Number of UFO Sightings", y = "State Population") +  # Customize plot title and axis labels
   theme_minimal() +  # Apply a minimal theme
   theme(plot.title = element_text(size = 16, face = "bold"), axis.title = element_text(size = 14), axis.text = element_text(size = 12))
-
 ```
 
 ### Plot 3: UFO Sightings in Denmark
