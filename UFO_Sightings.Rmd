@@ -1,0 +1,204 @@
+---
+title: "UFO Sightings"
+author: "Karoline, Eske, Bjarke & Fie"
+date: "2023-08-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Data Set
+This is a dataset that contains data from UFO sightings all around the world. It comprises over 80,000 records of UFO sightings reported to the National UFO Reporting Center in the United States during the last century (NUFORC)
+
+
+### Loading Libraries 
+```{r, warning=FALSE, message=FALSE}
+# Packages used in this script:
+library(tidyverse)
+library(here)
+library(withr)
+library(maps)
+library(gganimate)
+library(transformr)
+library(stringr)
+library(gifski)
+```
+
+### Tidy Data
+```{r}
+
+# Load data UFO sightings
+url <- "https://github.com/jonthegeek/apis/raw/main/data/data_ufo_reports_with_day_part.rds"
+ufo_path <- withr::local_tempfile(fileext = ".rds")
+download.file(url, ufo_path)
+
+ufo_data_original <- readRDS(ufo_path)
+
+# Make separate tables 
+# UFO_sightings
+ufo_sightings <- ufo_data_original %>% 
+  dplyr::select(
+    reported_date_time:city,
+    state, 
+    country_code,
+    shape:has_images,
+    day_part
+  ) %>% 
+ 
+  dplyr::mutate(
+    shape = tolower(shape)
+  )
+
+# UFO sightings places
+places <- ufo_data_original %>% 
+  dplyr::select(
+    city:country_code, 
+    latitude:elevation_m
+  ) %>% 
+  dplyr::distinct()
+
+```
+
+### Plot 1: UFO Sightings by Year and Continent
+```{r, warning=FALSE}
+
+# Create "posted_year" col from "posted_date" col
+ufo_sightings$posted_year <- as.integer(str_sub(ufo_sightings$posted_date, start = 1, end= 4))
+
+# Create larger time zone areas using the "timezone" col
+
+places$timezone_short <- str_remove(places$timezone, pattern = "/.*")
+
+# Join ufo_sightings and places data
+UFO_year_cum <- ufo_sightings %>%
+  left_join(., select(places, city, timezone_short), by=("city")) %>%
+  group_by(timezone_short, posted_year) %>%
+  count(name = "counts")
+
+# create plot
+animated_plot2 <- UFO_year_cum %>%
+ggplot(aes(posted_year, counts)) +
+  geom_path(aes(col = timezone_short),
+            size = 1) +
+  scale_x_continuous(breaks = c(1998:2023),
+                     expand = c(0,0)) +
+  scale_y_continuous(expand = c(0,50)) +
+  labs(x="Year" ,
+       y="Number of UFO sightings",
+       col = "Continent") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45,
+                                   hjust = 1),
+        axis.title.x = element_text(face = "bold"),
+        axis.title.y = element_text(face = "bold",
+                                    vjust = 2),
+        legend.title = element_text(face = "bold")) +
+  gganimate::transition_reveal(posted_year)
+
+# Animate plot
+animate(animated_plot2,fps = 5, renderer = gifski_renderer(),nframes = 50)
+```
+
+### Plot 2: UFO Sightings in the World
+
+Create and plot world map
+```{r, warning=FALSE}
+world_map <- map_data("world")
+# Plot the world map
+world<-ggplot() +
+  geom_polygon(data = world_map, aes(x = long, y = lat, group = group), fill = "white", color = "black") +
+  coord_fixed(ratio = 1.6, ylim = c(-60, 90)) +  # Adjust ratio and ylim for better map aspect
+  theme_void()
+```
+
+Based on the latitude and longitude of sightings I add points to the map by adding another ggplot layer
+```{r, warning=FALSE}
+world+
+  geom_point(data = places, aes(y=latitude,x=longitude, color =country_code))+coord_fixed(ratio = 1.6, ylim = c(-60, 90))+theme(legend.position = "none")
+```
+
+This dataset seems to indicate that UFO's only visit the west...
+There are many in the US! Lets take a closer look
+```{r, warning=FALSE}
+
+usa_map <- map_data("usa")
+USA<-ggplot() +
+  geom_polygon(data = usa_map, aes(x = long, y = lat, group = group), fill = "white", color = "black") +
+  coord_fixed() +
+  theme_void()
+```
+
+Same thing with a little bit of filtering and addition of state lines
+```{r, warning=FALSE}
+usa_map <- map_data("usa")
+sightings_in_US <- places %>%filter(country_code=="US" & state !="AK" & state !="HI")
+USA_states<-ggplot() +
+  geom_polygon(data = usa_map, aes(x = long, y = lat, group = group), fill = "white", color = "black") +
+  geom_path(data = map_data("state"), aes(x = long, y = lat, group = group), color = "black", linewidth = 1) +
+  geom_text(data = data.frame(state = state.abb, x = -120, y = 30), aes(x = x, y = y, label = state), size = 2) +
+  coord_fixed() +
+  theme_void()
+```
+
+Add the ggplot data containing sightings in the U.S
+```{r, warning=FALSE}
+USA_states+
+  geom_point(data = sightings_in_US, aes(y=latitude,x=longitude, color =state))+theme(legend.position = "none")
+```
+
+Load in new dataset, and create a dataframe containing keys
+```{r, warning=FALSE}
+state_pop<-read.csv("C:/Users/fiea/Desktop/Advanced R/nst-est2019-alldata.csv")
+state_data <- data.frame(
+  state_code = state.abb,
+  state_name = state.name
+)
+
+```
+
+Join and plot the correlation
+```{r, warning=FALSE}
+state_pop<-left_join(state_data,state_pop, by = c("state_name" ="NAME"))
+state_counts <- sightings_in_US %>%
+  group_by(state) %>%
+  summarize(count = n())
+for_plot<-left_join(state_counts,state_pop, by = c("state"="state_code"))
+ggplot(for_plot, aes(x = count, y = POPESTIMATE2010)) +
+  geom_point(color = "#4287F5", size = 3) +  # Customize point color and size
+  geom_smooth(method = 'lm', formula = y ~ x, color = "#FF7300", se = FALSE) +  # Customize line color
+  labs(title = "Relationship Between UFO Sightings and State Population", x = "Number of UFO Sightings", y = "State Population") +  # Customize plot title and axis labels
+  theme_minimal() +  # Apply a minimal theme
+  theme(plot.title = element_text(size = 16, face = "bold"), axis.title = element_text(size = 14), axis.text = element_text(size = 12))
+
+```
+
+### Plot 3: UFO Sightings in Denmark
+Tidy data to plot
+```{r, warning=FALSE}
+
+DK_kun <-places %>%filter(country_code=="DK")
+DK_kun<-left_join(DK_kun,ufo_sightings, by ="city")
+DK_info<-map_data("world", region = c("Denmark"))
+DK_lab_data <- DK_info %>%
+  group_by(region) %>%
+  summarise(long = mean(long), lat = mean(lat))
+DK_kun <- DK_kun %>%
+  mutate(shape = case_when(
+    shape == "circle" ~ "circle",
+    shape == "light" ~ "light",
+    TRUE ~ "other"
+  ))
+ggplot(DK_info, aes(x = long, y = lat)) +
+  geom_polygon(aes(group = group))+
+  scale_fill_viridis_d()+
+  theme_void()+
+  geom_point(data=DK_kun,aes(x=longitude,y=latitude,shape =shape),size =4, colour ="red")+
+  theme(
+    legend.text = element_text(size = 12),
+    legend.title = element_text(size = 14, face = "bold"),
+    legend.key.size = unit(2, "lines")
+  )
+
+```
